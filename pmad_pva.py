@@ -1,13 +1,15 @@
 #Author: Brandon Liang
-#Version: 6/25/18
+#Version: 6/26/18
 
 import pandas as pd
 import statsmodels.api as sm
+import scipy.stats as stats
 import numpy as np
+import statsmodels.formula.api as smf
 from sklearn.feature_selection import VarianceThreshold, RFE
 from sklearn.svm import SVR
+from sklearn.metrics import *
 from sklearn import preprocessing, linear_model
-from scipy.stats import boxcox
 
 X = pd.read_excel("pmad_pva.xlsx", '_TB01')
 X = X[X.TargetD.notnull()]
@@ -28,7 +30,7 @@ X.loc[:, 'DemCluster'] = X.loc[:, 'DemCluster'].isin(BIN_DemCluster).astype(int)
 X_preprocess = X
 int_types = []
 
-#Label encode non-numeric features
+# Label encode non-numeric features
 for column in X_preprocess.columns:
     if X_preprocess[column].dtype == type(object):
         le = preprocessing.LabelEncoder()
@@ -55,29 +57,42 @@ X_preprocess.drop(X_preprocess.columns[to_drop], axis=1)
 # Box-Cox where appropriate, center/scale, then apply spatial sign transform
 for column in X_preprocess.columns :
 	if X_preprocess[column].all() > 0.0:
-		X_preprocess[column], dummyVar = boxcox(X_preprocess[column])
+		X_preprocess[column], dummyVar = stats.boxcox(X_preprocess[column])
 	X_preprocess[column] = pd.Series(preprocessing.scale(X_preprocess[column]))
 	X_preprocess[column] = np.linalg.norm(X_preprocess[column])/X_preprocess[column]
  	
-
 for column in X_preprocess.columns:
 	smresults = sm.OLS(list(y), X_preprocess[column]).fit()
 	X_preprocess[column] = pd.DataFrame(smresults.predict())
 
 X = X_preprocess
 
+# Linear regression and backwards stepwise regression models
+# 'forward' and 'both' coefficients in the paper were identical to 'lm' and 'backward'
 list_model = dict()
-
-#Linear regression and backwards stepwise regression models
 list_model['lm'] = linear_model.LinearRegression()
 estimator = list_model['lm']
 list_model['lm'].fit(X, y)
 
-list_model['backward'] = RFE(estimator) #by default takes out half
-
-X_backward = pd.DataFrame(list_model['backward'].fit_transform(X, y))
+# By default takes out half of the features
+list_model['backward'] = RFE(estimator) 
+X_reduced = pd.DataFrame(list_model['backward'].fit_transform(X, y))
 list_model['backward'] = linear_model.LinearRegression()
-list_model['backward'].fit(X_backward, y)
+list_model['backward'].fit(X_reduced, y)
 
-print(list_model['lm'].coef_, '\n\n')
-print(list_model['backward'].coef_)
+print('\nlm coefficients: \n', list_model['lm'].coef_, '\n')
+print('backward coefficients: \n', list_model['backward'].coef_, '\n\n')
+
+# Print training performance metrics
+y_hat = list_model['lm'].predict(X)
+y_backwards_hat = list_model['backward'].predict(X_reduced)
+print("          \t lm              \t backward")
+print("TrainRMSE: ", np.sqrt(mean_squared_error(y, y_hat)), " ", np.sqrt(mean_squared_error(y, y_backwards_hat)))
+print("TrainRsquared: ", r2_score(y, y_hat), "  ", r2_score(y, y_backwards_hat))
+print("TrainMAE: ", mean_absolute_error(y, y_hat), "  ", mean_absolute_error(y, y_backwards_hat), "\n")
+
+# ANOVA tests and and reduced model summary
+print("ANOVA: ", stats.f_oneway(list_model['lm'].coef_, list_model['backward'].coef_))
+print("\nReduced model summary: \n\n", X_reduced.describe().transpose().head())
+
+# Code for plottingcan be found at: https://emredjan.github.io/blog/2017/07/11/emulating-r-plots-in-python/
