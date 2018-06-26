@@ -94,5 +94,3 @@ print("TrainMAE: ", mean_absolute_error(y, y_hat), "  ", mean_absolute_error(y, 
 # ANOVA tests and and reduced model summary
 print("ANOVA: ", stats.f_oneway(list_model['lm'].coef_, list_model['backward'].coef_))
 print("\nReduced model summary: \n\n", X_reduced.describe().transpose().head())
-
-# Code for plottingcan be found at: https://emredjan.github.io/blog/2017/07/11/emulating-r-plots-in-python/
